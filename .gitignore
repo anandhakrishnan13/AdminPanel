@@ -1,0 +1,127 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Dependencies
+node_modules/
+jspm_packages/
+bower_components/
+
+# Environment Variables
+.env
+.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build & Distribution
+dist/
+dist-ssr/
+build/
+out/
+*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Cache & Temporary Files
+.cache/
+.temp/
+.vite/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Agent Configuration Files (Development Rules)
+Agent.md
+Admin.md
+agent.md
+frontend/Agent.md
+server/Agent.md
+
+# Runtime Data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency Lock Files (Optional - uncomment if needed)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Next.js (if used)
+.next/
+
+# Nuxt.js (if used)
+.nuxt/
+
+# Serverless
+.serverless/
+
+# FuseBox
+.fusebox/
+
+# DynamoDB Local
+.dynamodb/
+
+# TernJS
+.tern-port
+
+# Yarn
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
