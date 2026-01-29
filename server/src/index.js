@@ -12,6 +12,7 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js
 import { requestLogger } from './middlewares/logger.middleware.js';
 import apiRoutes from './routes/index.js';
 import { gracefulShutdown } from './utils/shutdown.util.js';
+import { connectDB, disconnectDB, getConnectionStatus } from './config/database.js';
 
 // Load environment variables
 dotenv.config();
@@ -75,6 +76,7 @@ app.get('/health', (req, res) => {
     success: true,
     data: {
       status: 'healthy',
+      database: getConnectionStatus(),
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
     },
@@ -98,6 +100,9 @@ app.use(errorHandler);
 // Server Startup
 // ===================
 
+// Connect to database
+await connectDB();
+
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -115,8 +120,15 @@ server.on('connection', (connection) => {
 // Graceful Shutdown
 // ===================
 
-process.on('SIGTERM', () => gracefulShutdown(server, connections));
-process.on('SIGINT', () => gracefulShutdown(server, connections));
+process.on('SIGTERM', async () => {
+  await disconnectDB();
+  gracefulShutdown(server, connections);
+});
+
+process.on('SIGINT', async () => {
+  await disconnectDB();
+  gracefulShutdown(server, connections);
+});
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {

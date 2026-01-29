@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
+    "seed": "node src/scripts/seed.js",
+    "seed:force": "NODE_ENV=production node src/scripts/seed.js",
     "lint": "eslint src/",
     "test": "node --test"
   },
@@ -14,11 +16,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
+    "mongoose": "^9.1.5",
     "uuid": "^11.0.0"
   },
   "devDependencies": {
