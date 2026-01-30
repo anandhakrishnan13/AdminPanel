@@ -94,9 +94,7 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
-userSchema.index({ email: 1 });
-userSchema.index({ reportCode: 1 });
+// Indexes (removing duplicate email and reportCode as they're already unique:true in schema)
 userSchema.index({ 'role.code': 1, status: 1 });
 userSchema.index({ 'department.code': 1 });
 userSchema.index({ reportingManagerId: 1 });
@@ -117,32 +115,26 @@ userSchema.virtual('reportingManager', {
 });
 
 // Pre-save hook: Hash password if modified & ensure report code is uppercase
-userSchema.pre('save', async function (next) {
-  try {
-    // Ensure report code is uppercase
-    if (this.reportCode) {
-      this.reportCode = this.reportCode.toUpperCase();
-    }
+userSchema.pre('save', async function () {
+  // Ensure report code is uppercase
+  if (this.reportCode) {
+    this.reportCode = this.reportCode.toUpperCase();
+  }
 
-    // Ensure role code is uppercase
-    if (this.role && this.role.code) {
-      this.role.code = this.role.code.toUpperCase();
-    }
+  // Ensure role code is uppercase
+  if (this.role && this.role.code) {
+    this.role.code = this.role.code.toUpperCase();
+  }
 
-    // Ensure department code is uppercase
-    if (this.department && this.department.code) {
-      this.department.code = this.department.code.toUpperCase();
-    }
+  // Ensure department code is uppercase
+  if (this.department && this.department.code) {
+    this.department.code = this.department.code.toUpperCase();
+  }
 
-    // Only hash password if it's new or modified
-    if (this.isModified('password')) {
-      const hashedPassword = await bcrypt.hash(this.password, SALT_ROUNDS);
-      this.password = hashedPassword;
-    }
-
-    next();
-  } catch (error) {
-    next(error);
+  // Only hash password if it's new or modified
+  if (this.isModified('password')) {
+    const hashedPassword = await bcrypt.hash(this.password, SALT_ROUNDS);
+    this.password = hashedPassword;
   }
 });
 

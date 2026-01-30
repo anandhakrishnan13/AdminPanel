@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import type { User, LoginCredentials } from '@/types';
+import { authService } from '@/services/api.service';
 
 // Types
 interface AuthContextType {
@@ -7,7 +8,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (user: Partial<User>) => void;
 }
 
@@ -21,7 +22,11 @@ interface AuthProviderProps {
 
 // Provider Component
 export const AuthProvider = ({ children }: AuthProviderProps): ReactNode => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    // Try to restore user from localStorage on mount
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const isAuthenticated = useMemo(() => user !== null, [user]);
@@ -29,36 +34,31 @@ export const AuthProvider = ({ children }: AuthProviderProps): ReactNode => {
   const login = useCallback(async (credentials: LoginCredentials): Promise<void> => {
     setIsLoading(true);
     try {
-      // Mock login for demo - replace with actual API call
-      if (credentials.email === "superadmin@company.com" && credentials.password === "password123") {
-        const mockUser: User = {
-          id: "user_1",
-          name: "John Super Admin",
-          email: "superadmin@company.com",
-          role: "SUPER_ADMIN",
-          roleId: "role_1",
-          departmentId: null,
-          reportingManagerId: null,
-          status: "active",
-          lastLogin: new Date().toISOString(),
-          permissions: ["*"],
-          avatar: null,
-          reportCode: "SA7X9K2M",
-          createdAt: "2024-01-01T00:00:00Z",
-          updatedAt: new Date().toISOString(),
-        };
-        setUser(mockUser);
+      const response = await authService.login(credentials);
+      if (response.success && response.data) {
+        setUser(response.data);
+        // Store user in localStorage for persistence
+        localStorage.setItem('user', JSON.stringify(response.data));
       } else {
-        throw new Error('Invalid credentials');
+        throw new Error('Login failed');
       }
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const logout = useCallback((): void => {
-    setUser(null);
-    // TODO: Clear tokens, redirect, etc.
+  const logout = useCallback(async (): Promise<void> => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      localStorage.removeItem('user');
+    }
   }, []);
 
   const updateUser = useCallback((updates: Partial<User>): void => {

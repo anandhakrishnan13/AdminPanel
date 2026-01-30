@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,36 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserModal, type UserFormData } from "@/components/UserModal";
-import type { RoleCode, UserStatus, User } from "@/types";
+import type { UserStatus, User } from "@/types";
 import { formatRelativeTime } from "@/utils";
 import { useAuth } from "@/context";
-
-// Generate unique alphanumeric report code
-const generateReportCode = (): string => {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-};
-
-// Dummy user data with reportCode
-const initialUsers: User[] = [
-  { id: "user_1", name: "John Super Admin", email: "superadmin@company.com", role: "SUPER_ADMIN", roleId: "role_1", departmentId: null, reportingManagerId: null, status: "active", lastLogin: "2024-01-15T10:30:00Z", permissions: ["*"], avatar: null, reportCode: "SA7X9K2M", createdAt: "2024-01-01T00:00:00Z", updatedAt: "2024-01-15T10:30:00Z" },
-  { id: "user_2", name: "Jane Admin", email: "admin@company.com", role: "ADMIN", roleId: "role_2", departmentId: null, reportingManagerId: "user_1", status: "active", lastLogin: "2024-01-15T09:00:00Z", permissions: ["dashboard", "users", "users.view", "users.create"], avatar: null, reportCode: "AD3K8L1P", createdAt: "2024-01-02T00:00:00Z", updatedAt: "2024-01-15T09:00:00Z" },
-  { id: "user_3", name: "Robert Engineering Head", email: "hod.engineering@company.com", role: "HOD", roleId: "role_3", departmentId: "dept_1", reportingManagerId: "user_2", status: "active", lastLogin: "2024-01-14T16:00:00Z", permissions: ["dashboard", "users", "users.view"], avatar: null, reportCode: "EH5N2W8Q", createdAt: "2024-01-03T00:00:00Z", updatedAt: "2024-01-14T16:00:00Z" },
-  { id: "user_4", name: "Sarah Tech Manager", email: "manager.tech@company.com", role: "MANAGER", roleId: "role_4", departmentId: "dept_1", reportingManagerId: "user_3", status: "active", lastLogin: "2024-01-15T08:00:00Z", permissions: ["dashboard", "dashboard.view"], avatar: null, reportCode: "TM9R4Y6J", createdAt: "2024-01-04T00:00:00Z", updatedAt: "2024-01-15T08:00:00Z" },
-  { id: "user_5", name: "Mike Developer", email: "mike.dev@company.com", role: "EMPLOYEE", roleId: "role_5", departmentId: "dept_1", reportingManagerId: "user_4", status: "active", lastLogin: "2024-01-15T07:30:00Z", permissions: ["dashboard"], avatar: null, reportCode: "DV2T7H3F", createdAt: "2024-01-05T00:00:00Z", updatedAt: "2024-01-15T07:30:00Z" },
-  { id: "user_6", name: "Lisa HR Head", email: "hod.hr@company.com", role: "HOD", roleId: "role_3", departmentId: "dept_2", reportingManagerId: "user_2", status: "active", lastLogin: "2024-01-13T14:00:00Z", permissions: ["dashboard", "users"], avatar: null, reportCode: "HR8C1M5Z", createdAt: "2024-01-03T00:00:00Z", updatedAt: "2024-01-13T14:00:00Z" },
-  { id: "user_7", name: "David Finance Head", email: "hod.finance@company.com", role: "HOD", roleId: "role_3", departmentId: "dept_3", reportingManagerId: "user_2", status: "inactive", lastLogin: "2024-01-10T12:00:00Z", permissions: ["dashboard", "reports"], avatar: null, reportCode: "FH4P9S2B", createdAt: "2024-01-03T00:00:00Z", updatedAt: "2024-01-10T12:00:00Z" },
-  { id: "user_8", name: "Emma Marketing Head", email: "hod.marketing@company.com", role: "HOD", roleId: "role_3", departmentId: "dept_4", reportingManagerId: "user_1", status: "active", lastLogin: "2024-01-15T11:00:00Z", permissions: ["dashboard", "dashboard.analytics"], avatar: null, reportCode: "MH6L3K8N", createdAt: "2024-01-03T00:00:00Z", updatedAt: "2024-01-15T11:00:00Z" },
-  { id: "user_9", name: "Alex Campaign Manager", email: "manager.campaign@company.com", role: "MANAGER", roleId: "role_4", departmentId: "dept_4", reportingManagerId: "user_8", status: "active", lastLogin: "2024-01-14T09:00:00Z", permissions: ["dashboard"], avatar: null, reportCode: "CM1W7V4D", createdAt: "2024-01-06T00:00:00Z", updatedAt: "2024-01-14T09:00:00Z" },
-  { id: "user_10", name: "Chris Content Writer", email: "chris.content@company.com", role: "EMPLOYEE", roleId: "role_5", departmentId: "dept_4", reportingManagerId: "user_9", status: "inactive", lastLogin: "2024-01-01T10:00:00Z", permissions: [], avatar: null, reportCode: "CW5X2G9R", createdAt: "2024-01-07T00:00:00Z", updatedAt: "2024-01-01T10:00:00Z" },
-];
+import { userService } from "@/services/api.service";
+import { useToast } from "@/hooks/use-toast";
 
 // Role configuration using map-friendly object
-const roleConfig: Record<RoleCode, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
+const roleConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   SUPER_ADMIN: { label: "Super Admin", variant: "default" },
   ADMIN: { label: "Admin", variant: "secondary" },
   HOD: { label: "Head of Dept", variant: "outline" },
@@ -89,29 +67,57 @@ const filterOptions = {
 export function Users(): React.ReactNode {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
-  const [users, setUsers] = React.useState<User[]>(initialUsers);
+  const { toast } = useToast();
+  const [users, setUsers] = React.useState<User[]>([]);
+  const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [searchTerm, setSearchTerm] = React.useState<string>("");
   const [roleFilter, setRoleFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false);
   const [modalMode, setModalMode] = React.useState<"create" | "edit">("create");
   const [selectedUser, setSelectedUser] = React.useState<User | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
+
+  // Fetch users from backend
+  const fetchUsers = React.useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const params: { role?: string; status?: UserStatus; search?: string } = {};
+      
+      if (roleFilter !== "all") params.role = roleFilter;
+      if (statusFilter !== "all") params.status = statusFilter as UserStatus;
+      if (searchTerm) params.search = searchTerm;
+
+      const response = await userService.getUsers(params);
+      setUsers(response.data || []);
+    } catch (error) {
+      console.error("Failed to fetch users:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load users. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [roleFilter, statusFilter, searchTerm, toast]);
+
+  // Load users on mount and when filters change
+  React.useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const filteredUsers = React.useMemo(() => {
     return users.filter((user) => {
       // Hide current logged-in user from the list
-      if (currentUser && user.id === currentUser.id) {
+      const userId = user._id || user.id;
+      const currentUserId = currentUser?._id || currentUser?.id;
+      if (currentUserId && userId === currentUserId) {
         return false;
       }
-      
-      const matchesSearch =
-        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesRole = roleFilter === "all" || user.role === roleFilter;
-      const matchesStatus = statusFilter === "all" || user.status === statusFilter;
-      return matchesSearch && matchesRole && matchesStatus;
+      return true;
     });
-  }, [users, searchTerm, roleFilter, statusFilter, currentUser]);
+  }, [users, currentUser]);
 
   const handleOpenCreateModal = (): void => {
     setSelectedUser(null);
@@ -121,7 +127,9 @@ export function Users(): React.ReactNode {
 
   const handleOpenEditModal = (user: User): void => {
     // Prevent self-edit - redirect to settings
-    if (currentUser && user.id === currentUser.id) {
+    const userId = user._id || user.id;
+    const currentUserId = currentUser?._id || currentUser?.id;
+    if (currentUserId && userId === currentUserId) {
       navigate("/settings");
       return;
     }
@@ -135,49 +143,61 @@ export function Users(): React.ReactNode {
     setSelectedUser(null);
   };
 
-  const handleSubmit = (data: UserFormData): void => {
-    if (modalMode === "create") {
-      const newUser: User = {
-        id: `user_${Date.now()}`,
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        roleId: `role_${data.role.toLowerCase()}`,
-        departmentId: data.departmentId,
-        reportingManagerId: data.reportingManagerId,
-        status: data.status,
-        lastLogin: null,
-        permissions: data.permissions,
-        avatar: null,
-        reportCode: data.reportCode,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setUsers((prev) => [newUser, ...prev]);
-    } else if (selectedUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id
-            ? {
-                ...u,
-                name: data.name,
-                email: data.email,
-                role: data.role,
-                departmentId: data.departmentId,
-                reportingManagerId: data.reportingManagerId,
-                status: data.status,
-                permissions: data.permissions,
-                reportCode: data.reportCode,
-                updatedAt: new Date().toISOString(),
-              }
-            : u
-        )
-      );
+  const handleSubmit = async (data: UserFormData): Promise<void> => {
+    try {
+      setIsSubmitting(true);
+      
+      if (modalMode === "create") {
+        await userService.createUser(data);
+        toast({
+          title: "Success",
+          description: "User created successfully",
+        });
+      } else if (selectedUser) {
+        const userId = selectedUser._id || selectedUser.id;
+        if (userId) {
+          await userService.updateUser(userId, data);
+          toast({
+            title: "Success",
+            description: "User updated successfully",
+          });
+        }
+      }
+
+      handleCloseModal();
+      await fetchUsers(); // Refresh the list
+    } catch (error) {
+      console.error("Failed to save user:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save user",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteUser = (userId: string): void => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+  const handleDeleteUser = async (userId: string): Promise<void> => {
+    if (!confirm("Are you sure you want to delete this user?")) {
+      return;
+    }
+
+    try {
+      await userService.deleteUser(userId);
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+      });
+      await fetchUsers(); // Refresh the list
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete user",
+        variant: "destructive",
+      });
+    }
   };
 
   const formatLastLogin = (lastLogin: string | null): string => {
@@ -261,60 +281,69 @@ export function Users(): React.ReactNode {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredUsers.length === 0 ? (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={tableColumns.length} className="h-24 text-center">
+                      <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                    </TableCell>
+                  </TableRow>
+                ) : filteredUsers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={tableColumns.length} className="h-24 text-center">
                       No users found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredUsers.map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-9 w-9">
-                            <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                              {getInitials(user.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium">{user.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                      <TableCell>
-                        <Badge variant={roleConfig[user.role].variant}>
-                          {roleConfig[user.role].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatLastLogin(user.lastLogin)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={user.status === "active" ? "default" : "destructive"}>
-                          {user.status === "active" ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenEditModal(user)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => handleDeleteUser(user.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  filteredUsers.map((user) => {
+                    const userId = user._id || user.id || "";
+                    return (
+                      <TableRow key={userId}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-9 w-9">
+                              <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                                {getInitials(user.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="font-medium">{user.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                        <TableCell>
+                          <Badge variant={roleConfig[user.role.code].variant}>
+                            {roleConfig[user.role.code].label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatLastLogin(user.lastLogin)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={user.status === "active" ? "default" : "destructive"}>
+                            {user.status === "active" ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenEditModal(user)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteUser(userId)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -333,6 +362,7 @@ export function Users(): React.ReactNode {
         onSubmit={handleSubmit}
         user={selectedUser}
         mode={modalMode}
+        isSubmitting={isSubmitting}
       />
     </div>
   );

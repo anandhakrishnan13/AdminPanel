@@ -1,23 +1,77 @@
 import * as React from "react";
-import { Users, Building2, TrendingUp, Clock } from "lucide-react";
+import { Users, Building2, TrendingUp, Clock, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-
-// Stats configuration using map-friendly array
-const statsConfig = [
-  { title: "Total Users", value: "10", description: "+2 from last month", icon: Users },
-  { title: "Departments", value: "5", description: "All active", icon: Building2 },
-  { title: "Active Sessions", value: "8", description: "+12% from yesterday", icon: TrendingUp },
-  { title: "Pending Tasks", value: "3", description: "-2 from yesterday", icon: Clock },
-];
-
-// Recent activity data
-const recentActivity = [
-  { user: "Jane Admin", action: "Created new user", time: "2 hours ago" },
-  { user: "Robert HOD", action: "Updated permissions", time: "4 hours ago" },
-  { user: "Sarah Manager", action: "Logged in", time: "5 hours ago" },
-];
+import { userService } from "@/services/api.service";
+import type { UserStats } from "@/services/api.service";
 
 export function Dashboard(): React.ReactNode {
+  const [stats, setStats] = React.useState<UserStats | null>(null);
+  const [isLoading, setIsLoading] = React.useState<boolean>(true);
+
+  // Fetch user statistics from backend
+  React.useEffect(() => {
+    const fetchStats = async (): Promise<void> => {
+      try {
+        setIsLoading(true);
+        const response = await userService.getUserStats();
+        if (response.success && response.data) {
+          setStats(response.data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch stats:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  // Calculate stats configuration from backend data
+  const statsConfig = React.useMemo(() => {
+    if (!stats) return [];
+    
+    return [
+      { 
+        title: "Total Users", 
+        value: stats.total.toString(), 
+        description: `${stats.byStatus.active} active, ${stats.byStatus.inactive} inactive`, 
+        icon: Users 
+      },
+      { 
+        title: "Super Admins", 
+        value: stats.byRole.superAdmin.toString(), 
+        description: "Full system access", 
+        icon: Building2 
+      },
+      { 
+        title: "Admins & HODs", 
+        value: (stats.byRole.admin + stats.byRole.hod).toString(), 
+        description: `${stats.byRole.admin} Admins, ${stats.byRole.hod} HODs`, 
+        icon: TrendingUp 
+      },
+      { 
+        title: "Managers & Employees", 
+        value: (stats.byRole.manager + stats.byRole.employee).toString(), 
+        description: `${stats.byRole.manager} Managers, ${stats.byRole.employee} Employees`, 
+        icon: Clock 
+      },
+    ];
+  }, [stats]);
+
+  // Recent activity data (mock for now - can be fetched from backend later)
+  const recentActivity = [
+    { user: "Jane Admin", action: "Created new user", time: "2 hours ago" },
+    { user: "Robert HOD", action: "Updated permissions", time: "4 hours ago" },
+    { user: "Sarah Manager", action: "Logged in", time: "5 hours ago" },
+  ];
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <div>

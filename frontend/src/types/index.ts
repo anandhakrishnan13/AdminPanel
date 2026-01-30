@@ -32,23 +32,20 @@ export interface PaginationMeta {
 export type RoleCode = 'SUPER_ADMIN' | 'ADMIN' | 'HOD' | 'MANAGER' | 'EMPLOYEE';
 export type UserStatus = 'active' | 'inactive';
 
+// Embedded Role (in User document)
 export interface Role {
-  id: string;
   name: string;
   code: RoleCode;
   level: number;
   description: string;
   canAssignRoles: RoleCode[];
-  createdAt: string;
 }
 
+// Embedded Department (in User document)
 export interface Department {
-  id: string;
   name: string;
   code: string;
   description: string;
-  headId: string | null;
-  createdAt: string;
 }
 
 export interface Permission {
@@ -60,18 +57,18 @@ export interface Permission {
 }
 
 export interface User {
-  id: string;
+  _id?: string; // MongoDB ID
+  id?: string; // For compatibility
   name: string;
   email: string;
-  role: RoleCode;
-  roleId: string;
-  departmentId: string | null;
+  role: Role; // Embedded role object
+  department: Department | null; // Embedded department object
   reportingManagerId: string | null;
   status: UserStatus;
   lastLogin: string | null;
   permissions: string[];
   avatar: string | null;
-  reportCode: string; // Unique alphanumeric report code
+  reportCode?: string; // Unique alphanumeric report code
   createdAt: string;
   updatedAt: string;
 }
@@ -84,11 +81,12 @@ export interface CreateUserFormData {
   name: string;
   email: string;
   password: string;
-  departmentId: string;
-  role: RoleCode;
+  department: Department | null;
+  role: Role;
   reportingManagerId: string;
   status: UserStatus;
   permissions: string[];
+  reportCode?: string;
 }
 
 export interface UpdateUserFormData extends Partial<Omit<CreateUserFormData, 'password'>> {
@@ -128,7 +126,7 @@ export interface UserTableRow {
   id: string;
   name: string;
   email: string;
-  role: RoleCode;
+  role: Role;
   lastLogin: string | null;
   status: UserStatus;
 }

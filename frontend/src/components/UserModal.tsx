@@ -20,7 +20,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { RoleCode, UserStatus, Permission, User } from "@/types";
+import { Loader2, Eye, EyeOff } from "lucide-react";
+import type { UserStatus, Permission, User, Role, Department } from "@/types";
+import { userService } from "@/services/api.service";
 
 // Permission data
 const permissionsData: Permission[] = [
@@ -85,67 +87,77 @@ const permissionsData: Permission[] = [
   },
 ];
 
-// Dropdown options
-const dropdownOptions = {
-  departments: [
-    { label: "Engineering", value: "dept_1" },
-    { label: "Human Resources", value: "dept_2" },
-    { label: "Finance", value: "dept_3" },
-    { label: "Marketing", value: "dept_4" },
-    { label: "Operations", value: "dept_5" },
-  ],
-  roles: [
-    { label: "Super Admin", value: "SUPER_ADMIN" },
-    { label: "Admin", value: "ADMIN" },
-    { label: "Head of Department", value: "HOD" },
-    { label: "Manager", value: "MANAGER" },
-    { label: "Employee", value: "EMPLOYEE" },
-  ],
-  statuses: [
-    { label: "Active", value: "active" },
-    { label: "Inactive", value: "inactive" },
-  ],
-  managers: [
-    { label: "John Super Admin", value: "user_1" },
-    { label: "Jane Admin", value: "user_2" },
-    { label: "Robert Engineering Head", value: "user_3" },
-    { label: "Sarah Tech Manager", value: "user_4" },
-    { label: "Lisa HR Head", value: "user_6" },
-  ],
-};
+// Static role/department data matching backend
+const rolesData: Role[] = [
+  {
+    name: "Super Admin",
+    code: "SUPER_ADMIN",
+    level: 1,
+    description: "Full system access with all permissions",
+    canAssignRoles: ["ADMIN", "HOD", "MANAGER", "EMPLOYEE"],
+  },
+  {
+    name: "Admin",
+    code: "ADMIN",
+    level: 2,
+    description: "Administrative access as granted by Super Admin",
+    canAssignRoles: ["HOD", "MANAGER", "EMPLOYEE"],
+  },
+  {
+    name: "Head of Department",
+    code: "HOD",
+    level: 3,
+    description: "Department-level access",
+    canAssignRoles: ["MANAGER", "EMPLOYEE"],
+  },
+  {
+    name: "Manager",
+    code: "MANAGER",
+    level: 4,
+    description: "Team management access",
+    canAssignRoles: ["EMPLOYEE"],
+  },
+  {
+    name: "Employee",
+    code: "EMPLOYEE",
+    level: 5,
+    description: "Basic employee access",
+    canAssignRoles: [],
+  },
+];
 
-// Form field definitions for DRY rendering
-const formFields = [
-  { id: "name", label: "Full Name", type: "text", placeholder: "Enter full name" },
-  { id: "email", label: "Email Address", type: "email", placeholder: "Enter email address" },
-  { id: "password", label: "Password", type: "password", placeholder: "Enter password (min 8 characters)" },
-] as const;
+const departmentsData: Department[] = [
+  { name: "Engineering", code: "ENG", description: "Software Development and Engineering" },
+  { name: "Human Resources", code: "HR", description: "Human Resources and Recruitment" },
+  { name: "Finance", code: "FIN", description: "Finance and Accounting" },
+  { name: "Marketing", code: "MKT", description: "Marketing and Communications" },
+  { name: "Operations", code: "OPS", description: "Operations and Logistics" },
+];
 
-const selectFields = [
-  { id: "departmentId", label: "Department", options: dropdownOptions.departments, placeholder: "Select department" },
-  { id: "role", label: "Role", options: dropdownOptions.roles, placeholder: "Select role" },
-  { id: "reportingManagerId", label: "Reporting Manager", options: dropdownOptions.managers, placeholder: "Select manager" },
-  { id: "status", label: "Status", options: dropdownOptions.statuses, placeholder: "Select status" },
-] as const;
+const statusOptions = [
+  { label: "Active", value: "active" as UserStatus },
+  { label: "Inactive", value: "inactive" as UserStatus },
+];
 
 export interface UserFormData {
   name: string;
   email: string;
-  password: string;
-  departmentId: string;
-  role: RoleCode;
-  reportingManagerId: string;
+  password?: string;
+  department: Department | null;
+  role: Role;
+  reportingManagerId: string | null;
   status: UserStatus;
   permissions: string[];
-  reportCode: string;
+  reportCode?: string;
 }
 
 interface UserModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: UserFormData) => void;
-  user?: User | null; // If provided, it's edit mode
+  onSubmit: (data: UserFormData) => Promise<void>;
+  user?: User | null;
   mode: "create" | "edit";
+  isSubmitting?: boolean;
 }
 
 interface PermissionItemProps {
@@ -209,29 +221,72 @@ const PermissionItem = ({
   );
 };
 
-export function UserModal({ isOpen, onClose, onSubmit, user, mode }: UserModalProps): React.ReactNode {
-  const initialFormData: UserFormData = React.useMemo(() => ({
-    name: user?.name ?? "",
-    email: user?.email ?? "",
+export function UserModal({ isOpen, onClose, onSubmit, user, mode, isSubmitting = false }: UserModalProps): React.ReactNode {
+  const [formData, setFormData] = React.useState<UserFormData>({
+    name: "",
+    email: "",
     password: "",
-    departmentId: user?.departmentId ?? "",
-    role: user?.role ?? "EMPLOYEE",
-    reportingManagerId: user?.reportingManagerId ?? "",
-    status: user?.status ?? "active",
-    permissions: user?.permissions ?? [],
-    reportCode: user?.reportCode ?? "",
-  }), [user]);
-
-  const [formData, setFormData] = React.useState<UserFormData>(initialFormData);
+    department: null,
+    role: rolesData[4], // Default to Employee
+    reportingManagerId: null,
+    status: "active",
+    permissions: [],
+    reportCode: "",
+  });
   const [errors, setErrors] = React.useState<Partial<Record<keyof UserFormData, string>>>({});
+  const [availableManagers, setAvailableManagers] = React.useState<User[]>([]);
+  const [isLoadingManagers, setIsLoadingManagers] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState<boolean>(false);
 
-  // Reset form when modal opens or user changes
+  // Fetch available managers (all users for reporting manager dropdown)
   React.useEffect(() => {
     if (isOpen) {
-      setFormData(initialFormData);
+      const fetchManagers = async (): Promise<void> => {
+        try {
+          setIsLoadingManagers(true);
+          const response = await userService.getUsers({ limit: 100 });
+          setAvailableManagers(response.data || []);
+        } catch (error) {
+          console.error("Failed to fetch managers:", error);
+        } finally {
+          setIsLoadingManagers(false);
+        }
+      };
+      fetchManagers();
+    }
+  }, [isOpen]);
+
+  // Initialize form data when modal opens or user changes
+  React.useEffect(() => {
+    if (isOpen) {
+      if (user) {
+        setFormData({
+          name: user.name,
+          email: user.email,
+          password: "",
+          department: user.department,
+          role: user.role,
+          reportingManagerId: user.reportingManagerId,
+          status: user.status,
+          permissions: user.permissions,
+          reportCode: user.reportCode || "",
+        });
+      } else {
+        setFormData({
+          name: "",
+          email: "",
+          password: "",
+          department: null,
+          role: rolesData[4],
+          reportingManagerId: null,
+          status: "active",
+          permissions: [],
+          reportCode: "",
+        });
+      }
       setErrors({});
     }
-  }, [isOpen, initialFormData]);
+  }, [isOpen, user]);
 
   const selectedPermissions = React.useMemo(() => new Set(formData.permissions), [formData.permissions]);
 
@@ -239,6 +294,24 @@ export function UserModal({ isOpen, onClose, onSubmit, user, mode }: UserModalPr
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
+
+  const handleRoleChange = (roleCode: string): void => {
+    const selectedRole = rolesData.find((r) => r.code === roleCode);
+    if (selectedRole) {
+      setFormData((prev) => ({ ...prev, role: selectedRole }));
+    }
+  };
+
+  const handleDepartmentChange = (deptCode: string): void => {
+    if (deptCode === "none") {
+      setFormData((prev) => ({ ...prev, department: null }));
+    } else {
+      const selectedDept = departmentsData.find((d) => d.code === deptCode);
+      if (selectedDept) {
+        setFormData((prev) => ({ ...prev, department: selectedDept }));
+      }
     }
   };
 
@@ -277,28 +350,27 @@ export function UserModal({ isOpen, onClose, onSubmit, user, mode }: UserModalPr
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Invalid email format";
     }
-    if (mode === "create" && !formData.password.trim()) {
+    if (mode === "create" && !formData.password?.trim()) {
       newErrors.password = "Password is required";
-    } else if (formData.password && formData.password.length < 8) {
-      newErrors.password = "Password must be at least 8 characters";
+    } else if (formData.password && formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
     }
-    if (!formData.departmentId) newErrors.departmentId = "Department is required";
-    if (!formData.reportingManagerId) newErrors.reportingManagerId = "Reporting manager is required";
-    if (!formData.reportCode.trim()) {
+    if (!formData.reportCode?.trim()) {
       newErrors.reportCode = "Report code is required";
     } else if (!/^[A-Z0-9]+$/.test(formData.reportCode)) {
       newErrors.reportCode = "Report code must be alphanumeric uppercase";
+    } else if (formData.reportCode.length > 8) {
+      newErrors.reportCode = "Report code must be max 8 characters";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent): void => {
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (validateForm()) {
-      onSubmit(formData);
-      onClose();
+      await onSubmit(formData);
     }
   };
 
@@ -323,109 +395,213 @@ export function UserModal({ isOpen, onClose, onSubmit, user, mode }: UserModalPr
                   User Details
                 </h3>
 
-              {/* Text input fields using map */}
-              {formFields.map((field) => (
-                <div key={field.id} className="space-y-2">
-                  <Label htmlFor={field.id}>{field.label}</Label>
+                {/* Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
                   <Input
-                    id={field.id}
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={formData[field.id as keyof UserFormData] as string}
-                    onChange={(e) => handleInputChange(field.id as keyof UserFormData, e.target.value)}
-                    className={errors[field.id as keyof UserFormData] ? "border-destructive" : ""}
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange("name", e.target.value)}
+                    placeholder="Enter full name"
+                    className={errors.name ? "border-destructive" : ""}
                   />
-                  {errors[field.id as keyof UserFormData] && (
-                    <p className="text-sm text-destructive">{errors[field.id as keyof UserFormData]}</p>
-                  )}
+                  {errors.name && <p className="text-sm text-destructive">{errors.name}</p>}
                 </div>
-              ))}
 
-              {/* Select fields using map */}
-              {selectFields.map((field) => (
-                <div key={field.id} className="space-y-2">
-                  <Label htmlFor={field.id}>{field.label}</Label>
+                {/* Email */}
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange("email", e.target.value)}
+                    placeholder="Enter email address"
+                    className={errors.email ? "border-destructive" : ""}
+                  />
+                  {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+                </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="password">
+                    Password {mode === "edit" && <span className="text-muted-foreground">(leave blank to keep current)</span>}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) => handleInputChange("password", e.target.value)}
+                      placeholder={mode === "create" ? "Enter password (min 6 characters)" : "Enter new password (optional)"}
+                      className={errors.password ? "border-destructive pr-10" : "pr-10"}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                </div>
+
+                {/* Department */}
+                <div className="space-y-2">
+                  <Label htmlFor="department">Department</Label>
                   <Select
-                    value={formData[field.id as keyof UserFormData] as string}
-                    onValueChange={(value) => handleInputChange(field.id as keyof UserFormData, value)}
+                    value={formData.department?.code || "none"}
+                    onValueChange={handleDepartmentChange}
                   >
-                    <SelectTrigger className={errors[field.id as keyof UserFormData] ? "border-destructive" : ""}>
-                      <SelectValue placeholder={field.placeholder} />
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select department" />
                     </SelectTrigger>
                     <SelectContent>
-                      {field.options.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
+                      <SelectItem value="none">No Department</SelectItem>
+                      {departmentsData.map((dept) => (
+                        <SelectItem key={dept.code} value={dept.code}>
+                          {dept.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {errors[field.id as keyof UserFormData] && (
-                    <p className="text-sm text-destructive">{errors[field.id as keyof UserFormData]}</p>
-                  )}
                 </div>
-              ))}
 
-              {/* Report Code - Manual assignment */}
-              <Separator className="my-4" />
-              <div className="space-y-2">
-                <Label htmlFor="reportCode">Report Code</Label>
-                <Input
-                  id="reportCode"
-                  value={formData.reportCode}
-                  onChange={(e) => handleInputChange("reportCode", e.target.value.toUpperCase())}
-                  placeholder="e.g., SA7X9K2M"
-                  className={`font-mono ${errors.reportCode ? "border-destructive" : ""}`}
-                  maxLength={8}
-                />
-                {errors.reportCode && (
-                  <p className="text-sm text-destructive">{errors.reportCode}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Unique identifier for reports. Must be 8 alphanumeric characters (uppercase).
-                </p>
-              </div>
-            </div>
+                {/* Role */}
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select value={formData.role.code} onValueChange={handleRoleChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rolesData.map((role) => (
+                        <SelectItem key={role.code} value={role.code}>
+                          {role.name} (Level {role.level})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Right Column - Permissions */}
-            <div className="space-y-4 flex flex-col">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                  Permissions
-                </h3>
-                <span className="text-xs text-muted-foreground">
-                  {formData.permissions.length} selected
-                </span>
-              </div>
+                {/* Reporting Manager */}
+                <div className="space-y-2">
+                  <Label htmlFor="reportingManager">Reporting Manager</Label>
+                  <Select
+                    value={formData.reportingManagerId || "none"}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, reportingManagerId: value === "none" ? null : value }))}
+                    disabled={isLoadingManagers}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={isLoadingManagers ? "Loading..." : "Select manager"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Manager</SelectItem>
+                      {availableManagers.map((manager) => {
+                        const managerId = manager._id || manager.id || "";
+                        return (
+                          <SelectItem key={managerId} value={managerId}>
+                            {manager.name} ({manager.role.name})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="flex-1 rounded-lg border bg-card p-4">
-                <ScrollArea className="h-full">
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Select main permissions to enable sub-permissions. Child permissions require parent permission.
+                {/* Status */}
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, status: value as UserStatus }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((status) => (
+                        <SelectItem key={status.value} value={status.value}>
+                          {status.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Report Code */}
+                <Separator className="my-4" />
+                <div className="space-y-2">
+                  <Label htmlFor="reportCode">Report Code</Label>
+                  <Input
+                    id="reportCode"
+                    value={formData.reportCode}
+                    onChange={(e) => handleInputChange("reportCode", e.target.value.toUpperCase())}
+                    placeholder="e.g., SA7X9K2M"
+                    className={`font-mono ${errors.reportCode ? "border-destructive" : ""}`}
+                    maxLength={8}
+                  />
+                  {errors.reportCode && (
+                    <p className="text-sm text-destructive">{errors.reportCode}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Unique identifier for reports. Must be 8 alphanumeric characters (uppercase).
                   </p>
+                </div>
+              </div>
 
-                  <div className="space-y-4">
-                    {permissionsData.map((permission) => (
-                      <PermissionItem
-                        key={permission.id}
-                        permission={permission}
-                        selectedPermissions={selectedPermissions}
-                        onToggle={handlePermissionToggle}
-                      />
-                    ))}
-                  </div>
-                </ScrollArea>
+              {/* Right Column - Permissions */}
+              <div className="space-y-4 flex flex-col">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    Permissions
+                  </h3>
+                  <span className="text-xs text-muted-foreground">
+                    {formData.permissions.length} selected
+                  </span>
+                </div>
+
+                <div className="flex-1 rounded-lg border bg-card p-4">
+                  <ScrollArea className="h-full">
+                    <p className="text-xs text-muted-foreground mb-4">
+                      Select main permissions to enable sub-permissions. Child permissions require parent permission.
+                    </p>
+
+                    <div className="space-y-4">
+                      {permissionsData.map((permission) => (
+                        <PermissionItem
+                          key={permission.id}
+                          permission={permission}
+                          selectedPermissions={selectedPermissions}
+                          onToggle={handlePermissionToggle}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
             </div>
-          </div>
           </ScrollArea>
 
           <DialogFooter className="px-4 md:px-6 pb-4 md:pb-6 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
+            <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto" disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" className="w-full sm:w-auto">
-              {mode === "create" ? "Create User" : "Save Changes"}
+            <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {mode === "create" ? "Creating..." : "Saving..."}
+                </>
+              ) : (
+                <>{mode === "create" ? "Create User" : "Save Changes"}</>
+              )}
             </Button>
           </DialogFooter>
         </form>

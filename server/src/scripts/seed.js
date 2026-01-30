@@ -1,47 +1,16 @@
 /**
  * Database Seeding Script
- * Seeds the database with initial data (roles, departments, permissions, users)
+ * Seeds the database with initial data using embedded role/department architecture
  * Works with standalone MongoDB (no replica set required)
  */
 
 import mongoose from 'mongoose';
-import bcrypt from 'bcrypt';
 import dotenv from 'dotenv';
 import { connectDB, disconnectDB } from '../config/database.js';
-import { Role, Department, Permission, User } from '../models/schemas/user.schema.js';
-import { roles, departments, permissions, users } from '../models/data.js';
+import { User } from '../models/schemas/user.schema.js';
+import { users } from '../models/data.js';
 
 dotenv.config();
-
-const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
-
-/**
- * Seed permissions recursively with hierarchy
- */
-async function seedPermission(perm, parentId = null, level = 1) {
-  const permMap = new Map();
-
-  const created = await Permission.create({
-    name: perm.name,
-    code: perm.code,
-    description: perm.description,
-    parentId,
-    level,
-  });
-
-  permMap.set(perm.id, created._id);
-
-  // Seed children recursively
-  if (perm.children && perm.children.length > 0) {
-    for (const child of perm.children) {
-      const childMap = await seedPermission(child, created._id, level + 1);
-      // Merge child map into parent map
-      childMap.forEach((value, key) => permMap.set(key, value));
-    }
-  }
-
-  return permMap;
-}
 
 /**
  * Main seeding function
@@ -53,143 +22,131 @@ async function seed() {
     // Connect to database
     await connectDB();
 
-    // Check if MongoDB supports transactions (replica set)
-    const useTransactions = mongoose.connection.db
-      .admin()
-      .serverStatus()
-      .then((status) => status.repl && status.repl.setName)
-      .catch(() => false);
-
-    console.log(`📋 Transaction support: ${(await useTransactions) ? 'Yes (Replica Set)' : 'No (Standalone)'}\n`);
-
     // ===========================
     // CLEAR EXISTING DATA
     // ===========================
     console.log('🗑️  Clearing existing data...');
     await User.deleteMany({});
-    await Department.deleteMany({});
-    await Permission.deleteMany({});
-    await Role.deleteMany({});
     console.log('✅ Existing data cleared\n');
-
-    // ===========================
-    // SEED ROLES
-    // ===========================
-    console.log('📝 Seeding roles...');
-    const roleMap = new Map();
-
-    for (const role of roles) {
-      const created = await Role.create({
-        name: role.name,
-        code: role.code,
-        level: role.level,
-        description: role.description,
-        canAssignRoles: role.canAssignRoles,
-      });
-      roleMap.set(role.id, created._id);
-      console.log(`  ✓ Created role: ${role.name} (Level ${role.level})`);
-    }
-    console.log(`✅ ${roles.length} roles seeded\n`);
-
-    // ===========================
-    // SEED DEPARTMENTS
-    // ===========================
-    console.log('🏢 Seeding departments...');
-    const deptMap = new Map();
-
-    for (const dept of departments) {
-      const created = await Department.create({
-        name: dept.name,
-        code: dept.code,
-        description: dept.description,
-        headId: null, // Will update after users are created
-      });
-      deptMap.set(dept.id, created._id);
-      console.log(`  ✓ Created department: ${dept.name} (${dept.code})`);
-    }
-    console.log(`✅ ${departments.length} departments seeded\n`);
-
-    // ===========================
-    // SEED PERMISSIONS
-    // ===========================
-    console.log('🔐 Seeding permissions...');
-    const permMap = new Map();
-
-    for (const perm of permissions) {
-      const childMap = await seedPermission(perm);
-      childMap.forEach((value, key) => permMap.set(key, value));
-      console.log(`  ✓ Created permission tree: ${perm.name}`);
-    }
-
-    const totalPerms = await Permission.countDocuments();
-    console.log(`✅ ${totalPerms} permissions seeded (including nested)\n`);
 
     // ===========================
     // SEED USERS
     // ===========================
-    console.log('👥 Seeding users...');
+    console.log('👥 Seeding users with embedded role/department data...\n');
     const userMap = new Map();
 
-    // First pass: Create all users without reportingManagerId
-    for (const user of users) {
-      // Hash password (using bcrypt instead of placeholder)
-      const hashedPassword = await bcrypt.hash('password123', SALT_ROUNDS);
-
-      const created = await User.create({
-        name: user.name,
-        email: user.email,
-        password: hashedPassword,
-        role: user.role,
-        roleId: roleMap.get(user.roleId),
-        departmentId: user.departmentId ? deptMap.get(user.departmentId) : null,
-        reportingManagerId: null, // Set in second pass
-        reportCode: user.reportCode,
-        status: user.status,
-        lastLogin: user.lastLogin ? new Date(user.lastLogin) : null,
-        permissions: user.permissions,
-        avatar: user.avatar,
-      });
+  // First pass: Create all users without reportingManagerId
+  for (const user of users) {
+    // DO NOT hash password here - the pre-save hook will handle it
+    const created = await User.create({
+      name: user.name,
+      email: user.email,
+      password: user.password, // Plain text - will be hashed by pre-save hook
+      role: user.role, // Embedded role object
+      department: user.department, // Embedded department object (can be null)
+      reportingManagerId: null, // Set in second pass
+      reportCode: user.reportCode,
+      status: user.status,
+      lastLogin: user.lastLogin ? new Date(user.lastLogin) : null,
+      permissions: user.permissions, // Array of permission code strings
+      avatar: user.avatar,
+    });
 
       userMap.set(user.id, created._id);
-      console.log(`  ✓ Created user: ${user.name} (${user.role})`);
+      
+      // Detailed output
+      const roleInfo = `${user.role.name} (Level ${user.role.level})`;
+      const deptInfo = user.department ? `${user.department.name}` : 'No Department';
+      const statusIcon = user.status === 'active' ? '✅' : '⚠️';
+      const reportCodeInfo = user.reportCode ? ` | Code: ${user.reportCode}` : '';
+      
+      console.log(`  ${statusIcon} ${user.name}`);
+      console.log(`     Email: ${user.email}`);
+      console.log(`     Role: ${roleInfo}`);
+      console.log(`     Department: ${deptInfo}`);
+      console.log(`     Status: ${user.status}${reportCodeInfo}`);
+      console.log(`     Permissions: ${user.permissions.length} permission(s)`);
+      console.log('');
     }
 
     // Second pass: Update reportingManagerId
-    console.log('  → Updating reporting relationships...');
+    console.log('🔗 Setting up reporting relationships...');
+    let relationshipCount = 0;
     for (const user of users) {
       if (user.reportingManagerId) {
+        const managerOriginalId = user.reportingManagerId;
+        const managerMongoId = userMap.get(managerOriginalId);
+        const userMongoId = userMap.get(user.id);
+        
         await User.updateOne(
-          { _id: userMap.get(user.id) },
-          { reportingManagerId: userMap.get(user.reportingManagerId) }
+          { _id: userMongoId },
+          { reportingManagerId: managerMongoId }
         );
+        
+        // Find manager name for detailed output
+        const manager = users.find(u => u.id === managerOriginalId);
+        console.log(`  ✓ ${user.name} reports to ${manager.name}`);
+        relationshipCount++;
       }
     }
-
-    // Third pass: Update department heads
-    console.log('  → Assigning department heads...');
-    for (const dept of departments) {
-      if (dept.headId) {
-        await Department.updateOne({ _id: deptMap.get(dept.id) }, { headId: userMap.get(dept.headId) });
-      }
-    }
-
-    console.log(`✅ ${users.length} users seeded\n`);
+    console.log(`✅ ${relationshipCount} reporting relationships established\n`);
 
     // ===========================
     // SUMMARY
     // ===========================
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ status: 'active' });
+    const inactiveUsers = await User.countDocuments({ status: 'inactive' });
+    
+    const roleCounts = {
+      superAdmin: await User.countDocuments({ 'role.code': 'SUPER_ADMIN' }),
+      admin: await User.countDocuments({ 'role.code': 'ADMIN' }),
+      hod: await User.countDocuments({ 'role.code': 'HOD' }),
+      manager: await User.countDocuments({ 'role.code': 'MANAGER' }),
+      employee: await User.countDocuments({ 'role.code': 'EMPLOYEE' }),
+    };
+
+    const deptCounts = {
+      engineering: await User.countDocuments({ 'department.code': 'ENG' }),
+      hr: await User.countDocuments({ 'department.code': 'HR' }),
+      finance: await User.countDocuments({ 'department.code': 'FIN' }),
+      marketing: await User.countDocuments({ 'department.code': 'MKT' }),
+      noDepartment: await User.countDocuments({ department: null }),
+    };
+
     console.log('📊 Seeding Summary:');
-    console.log(`  • Roles: ${roles.length}`);
-    console.log(`  • Departments: ${departments.length}`);
-    console.log(`  • Permissions: ${totalPerms} (with hierarchy)`);
-    console.log(`  • Users: ${users.length}`);
-    console.log('');
-    console.log('🎉 Database seeding completed successfully!');
-    console.log('');
+    console.log('═══════════════════════════════════════════\n');
+    
+    console.log('👤 Total Users: ' + totalUsers);
+    console.log(`   • Active: ${activeUsers}`);
+    console.log(`   • Inactive: ${inactiveUsers}\n`);
+    
+    console.log('🎭 Users by Role:');
+    console.log(`   • Super Admin: ${roleCounts.superAdmin}`);
+    console.log(`   • Admin: ${roleCounts.admin}`);
+    console.log(`   • HOD: ${roleCounts.hod}`);
+    console.log(`   • Manager: ${roleCounts.manager}`);
+    console.log(`   • Employee: ${roleCounts.employee}\n`);
+    
+    console.log('🏢 Users by Department:');
+    console.log(`   • Engineering: ${deptCounts.engineering}`);
+    console.log(`   • Human Resources: ${deptCounts.hr}`);
+    console.log(`   • Finance: ${deptCounts.finance}`);
+    console.log(`   • Marketing: ${deptCounts.marketing}`);
+    console.log(`   • No Department: ${deptCounts.noDepartment}\n`);
+    
+    console.log('🔐 Database Architecture:');
+    console.log('   • Single User collection with embedded data');
+    console.log('   • Roles and Departments embedded in User documents');
+    console.log('   • Permissions stored as string arrays');
+    console.log('   • Passwords hashed with bcrypt (12 salt rounds)\n');
+    
+    console.log('═══════════════════════════════════════════');
+    console.log('🎉 Database seeding completed successfully!\n');
+    
     console.log('📝 Login Credentials:');
-    console.log('  Email: superadmin@company.com');
-    console.log('  Password: password123');
-    console.log('');
+    console.log('   Email: superadmin@company.com');
+    console.log('   Password: password123\n');
 
     // Close connection
     await disconnectDB();
@@ -197,6 +154,7 @@ async function seed() {
   } catch (error) {
     console.error('❌ Seeding failed:', error.message);
     console.error(error);
+    await disconnectDB();
     process.exit(1);
   }
 }

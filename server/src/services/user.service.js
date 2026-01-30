@@ -5,7 +5,7 @@
 
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
-import { User, Role, Department } from '../models/schemas/user.schema.js';
+import { User } from '../models/schemas/user.schema.js';
 import { createNotFoundError, createValidationError } from '../middlewares/error.middleware.js';
 import { createPaginationResult } from '../utils/pagination.util.js';
 
@@ -37,14 +37,14 @@ export class UserService {
    * @returns {Promise<object>}
    */
   static async getUsers(options = {}) {
-    const { cursor, limit = 20, role, status, search, departmentId } = options;
+    const { cursor, limit = 20, role, status, search, departmentCode } = options;
 
     // Build query
     const query = {};
 
-    if (role) query.role = role;
+    if (role) query['role.code'] = role.toUpperCase();
     if (status) query.status = status;
-    if (departmentId) query.departmentId = departmentId;
+    if (departmentCode) query['department.code'] = departmentCode.toUpperCase();
 
     if (search) {
       query.$or = [
@@ -62,8 +62,6 @@ export class UserService {
     // Fetch limit + 1 to check for more
     const users = await User.find(query)
       .select('-password') // Exclude password
-      .populate('roleId', 'name code level')
-      .populate('departmentId', 'name code')
       .populate('reportingManagerId', 'name email')
       .sort({ createdAt: -1 })
       .limit(limit + 1)
@@ -88,8 +86,6 @@ export class UserService {
 
     const user = await User.findById(id)
       .select('-password')
-      .populate('roleId', 'name code level')
-      .populate('departmentId', 'name code')
       .populate('reportingManagerId', 'name email')
       .lean();
 
@@ -130,21 +126,7 @@ export class UserService {
     session.startTransaction();
 
     try {
-      // 1. Validate role exists
-      const role = await Role.findById(data.roleId).session(session);
-      if (!role) {
-        throw new Error('Invalid role ID');
-      }
-
-      // 2. Validate department if provided
-      if (data.departmentId) {
-        const dept = await Department.findById(data.departmentId).session(session);
-        if (!dept) {
-          throw new Error('Invalid department ID');
-        }
-      }
-
-      // 3. Validate reporting manager if provided
+      // 1. Validate reporting manager if provided
       if (data.reportingManagerId) {
         const manager = await User.findById(data.reportingManagerId).session(session);
         if (!manager) {
@@ -152,13 +134,13 @@ export class UserService {
         }
       }
 
-      // 4. Create user (password hashing happens in pre-save hook)
+      // 2. Create user (password hashing happens in pre-save hook)
       const [user] = await User.create([data], { session });
 
-      // 5. Commit transaction
+      // 3. Commit transaction
       await session.commitTransaction();
 
-      // 6. Return user without password
+      // 4. Return user without password
       return await this.getUserById(user._id);
     } catch (error) {
       await session.abortTransaction();
@@ -225,24 +207,6 @@ export class UserService {
         throw new Error('User not found');
       }
 
-      // Validate role if changing
-      if (data.roleId && data.roleId.toString() !== user.roleId.toString()) {
-        const role = await Role.findById(data.roleId).session(session);
-        if (!role) {
-          throw new Error('Invalid role ID');
-        }
-      }
-
-      // Validate department if changing
-      if (data.departmentId !== undefined) {
-        if (data.departmentId && data.departmentId !== user.departmentId?.toString()) {
-          const dept = await Department.findById(data.departmentId).session(session);
-          if (!dept) {
-            throw new Error('Invalid department ID');
-          }
-        }
-      }
-
       // Validate reporting manager if changing
       if (data.reportingManagerId !== undefined) {
         if (
@@ -302,12 +266,6 @@ export class UserService {
         throw new Error('Cannot delete user with subordinates. Reassign subordinates first.');
       }
 
-      // Check if user is department head
-      const isDeptHead = await Department.countDocuments({ headId: id }).session(session);
-      if (isDeptHead > 0) {
-        throw new Error('Cannot delete department head. Reassign department first.');
-      }
-
       // Delete user
       await User.deleteOne({ _id: id }).session(session);
 
@@ -330,11 +288,11 @@ export class UserService {
     const [totalUsers, superAdminCount, adminCount, hodCount, managerCount, employeeCount] =
       await Promise.all([
         User.countDocuments(),
-        User.countDocuments({ role: 'SUPER_ADMIN' }),
-        User.countDocuments({ role: 'ADMIN' }),
-        User.countDocuments({ role: 'HOD' }),
-        User.countDocuments({ role: 'MANAGER' }),
-        User.countDocuments({ role: 'EMPLOYEE' }),
+        User.countDocuments({ 'role.code': 'SUPER_ADMIN' }),
+        User.countDocuments({ 'role.code': 'ADMIN' }),
+        User.countDocuments({ 'role.code': 'HOD' }),
+        User.countDocuments({ 'role.code': 'MANAGER' }),
+        User.countDocuments({ 'role.code': 'EMPLOYEE' }),
       ]);
 
     const [activeCount, inactiveCount] = await Promise.all([
@@ -420,9 +378,8 @@ export class UserService {
           const subordinates = await User.countDocuments({ reportingManagerId: id }).session(
             session
           );
-          const isDeptHead = await Department.countDocuments({ headId: id }).session(session);
 
-          if (subordinates > 0 || isDeptHead > 0) {
+          if (subordinates > 0) {
             results.failed.push({ id, reason: 'Has dependencies' });
             continue;
           }

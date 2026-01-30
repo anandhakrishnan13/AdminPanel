@@ -57,31 +57,45 @@ Admin/
 
 ### **Frontend Features**
 1. **Login Page** (`src/pages/Login.tsx`)
-   - Mock authentication (email: `superadmin@company.com`, password: `password123`)
+   - **REAL authentication** via `/api/auth/login` endpoint
+   - Bcrypt password verification against MongoDB
    - Form validation
+   - Session persistence in localStorage
    - Redirects to dashboard after login
 
 2. **Dashboard** (`src/pages/Dashboard.tsx`)
-   - Stats cards with icons
-   - Activity overview
+   - **Fetches real statistics** from `/api/users/stats`
+   - Stats cards with icons showing live data:
+     - Total users (active/inactive breakdown)
+     - Super Admin count
+     - Admin & HOD count
+     - Manager & Employee count
+   - Loading states with spinner
    - Responsive grid layout
 
 3. **Users Page** (`src/pages/Users.tsx`)
+   - **Fetches users from MongoDB** via `/api/users`
    - **CRITICAL:** Current logged-in user is HIDDEN from the list (even Super Admin)
    - User cannot see/edit their own data here
    - Table with columns: Name, Email, Role, Last Login, Status
-   - Filters: Search, Role filter, Status filter
-   - Edit button opens UserModal with pre-filled data
+   - Real-time filters: Search (name/email), Role filter, Status filter
+   - Edit button opens UserModal with pre-filled data from backend
    - Self-edit prevention: Clicking edit on own user redirects to Settings
-   - Shows all users except current user
+   - CRUD operations: Create, Update, Delete via API
+   - Toast notifications for success/error feedback
+   - Loading states during API calls
 
 4. **UserModal** (`src/components/UserModal.tsx`)
    - Works for both Create and Edit modes
+   - **Fetches available managers** from backend for dropdown
    - Responsive masonry layout: Left (User Details) | Right (Permissions)
    - **Report Code:** Manual input field (8-char alphanumeric uppercase, required)
-   - Fields: Name, Email, Password, Department, Role, Reporting Manager, Status, Permissions
+   - Fields: Name, Email, Password, Department (embedded), Role (embedded), Reporting Manager, Status, Permissions
+   - **Creates users** via `/api/users` POST
+   - **Updates users** via `/api/users/:id` PUT
    - Nested permission checkboxes with parent-child validation
    - ScrollArea for both columns to maintain equal height
+   - Form validation with error display
 
 5. **Settings Page** (`src/pages/Settings.tsx`)
    - **Only place users can edit themselves**
@@ -96,9 +110,20 @@ Admin/
    - Theme toggle (Light/Dark)
    - Responsive for mobile and desktop
 
-7. **Context API**
-   - `AuthContext`: User authentication, mock login, logout
+7. **API Integration Layer**
+   - `src/lib/api.ts`: Generic fetch wrapper with error handling
+   - `src/services/api.service.ts`: User and Auth service methods
+   - Centralized API client with typed responses
+   - ApiError class for structured error handling
+
+8. **Context API**
+   - `AuthContext`: **Real authentication** with backend API, session persistence, auto-restore
    - `ThemeContext`: Theme management (light/dark/system)
+
+9. **Toast Notifications** (`src/hooks/use-toast.tsx`)
+   - User feedback system for all operations
+   - Success and error variants
+   - Auto-dismiss after 5 seconds
 
 ### **Backend Features**
 1. **MVC Architecture**
@@ -125,12 +150,19 @@ Admin/
    - Memory leak prevention patterns
 
 4. **API Endpoints**
-   - `GET /api/users` - List users (paginated)
+   
+   **Auth Endpoints:**
+   - `POST /api/auth/login` - User login (email/password verification)
+   - `POST /api/auth/logout` - User logout
+   - `PUT /api/auth/change-password` - Change password
+   
+   **User Endpoints:**
+   - `GET /api/users` - List users (paginated, with filters)
    - `GET /api/users/:id` - Get single user
    - `POST /api/users` - Create user
    - `PUT /api/users/:id` - Update user
    - `DELETE /api/users/:id` - Delete user
-   - `GET /api/users/stats` - User statistics
+   - `GET /api/users/stats` - User statistics (by role & status)
    - `GET /api/users/export` - Stream all users
 
 ---
@@ -185,24 +217,36 @@ const fields = [
 ## Files Created/Modified
 
 ### **Frontend (Key Files)**
-- `src/pages/Users.tsx` - User management page (hides current user)
-- `src/pages/Login.tsx` - Login page with mock auth
+- `src/pages/Users.tsx` - User management page (fetches from backend, CRUD operations)
+- `src/pages/Login.tsx` - Login page with **real backend authentication**
 - `src/pages/Settings.tsx` - Self-edit page (name, password, logout)
-- `src/pages/Dashboard.tsx` - Dashboard with stats
-- `src/components/UserModal.tsx` - Create/Edit user modal (responsive, manual report code)
+- `src/pages/Dashboard.tsx` - Dashboard with **live stats from backend**
+- `src/components/UserModal.tsx` - Create/Edit user modal (API-integrated, embedded role/dept)
 - `src/components/Layout.tsx` - Sidebar + Breadcrumb layout
-- `src/context/AuthContext.tsx` - Authentication context (mock login)
-- `src/types/index.ts` - All TypeScript types (User, Role, Permission, etc.)
-- `src/App.tsx` - Routes: `/login`, `/`, `/users`, `/settings`
+- `src/context/AuthContext.tsx` - Authentication context with **real API calls**
+- `src/lib/api.ts` - Generic API fetch wrapper
+- `src/services/api.service.ts` - User & Auth API service layer
+- `src/hooks/use-toast.tsx` - Toast notification system
+- `src/types/index.ts` - All TypeScript types with **embedded role/department** structure
+- `src/App.tsx` - Routes with ToastProvider: `/login`, `/`, `/users`, `/settings`
+- `.env` - Frontend environment variables (API_URL)
 
 ### **Backend (Key Files)**
-- `src/models/data.js` - Dummy data (10 users, 5 roles, permissions, departments)
+- `src/models/data.js` - Seed data (10 users with embedded role/department)
+- `src/models/schemas/user.schema.js` - Single User schema (embedded architecture)
+- `src/scripts/seed.js` - Database seeding script
 - `src/index.js` - Express server with security middlewares
-- `src/controllers/user.controller.js` - User CRUD handlers
-- `src/services/user.service.js` - Business logic
+- `src/routes/index.js` - Route aggregator (auth + user routes)
+- `src/routes/auth.routes.js` - Authentication endpoints
+- `src/routes/user.routes.js` - User management endpoints
+- `src/controllers/auth.controller.js` - Login, logout, password change handlers
+- `src/controllers/user.controller.js` - User CRUD handlers with MongoDB integration
+- `src/services/user.service.js` - Business logic with embedded data support
+- `src/config/database.js` - MongoDB connection with pooling
 - `src/utils/pagination.util.js` - Cursor pagination
 - `src/utils/stream.util.js` - Streaming responses
 - `src/middlewares/error.middleware.js` - Centralized error handling
+- `.env` - Backend environment variables (MongoDB URI, CORS, bcrypt rounds)
 
 ### **Configuration Files**
 - `.gitignore` - Single comprehensive gitignore (ignores Agent.md files)
@@ -217,25 +261,30 @@ const fields = [
 ## Current State
 
 ### **Completed ✅**
-1. Full frontend structure with Shadcn UI
-2. Full backend MVC structure with MongoDB integration
-3. Login page with mock authentication
-4. Users page with self-hiding logic
-5. Settings page with logout
-6. User creation/editing modal with manual report code
-7. Responsive design for all screen sizes
-8. Breadcrumb showing only current page
-9. Context API for auth and theme
-10. MongoDB database with single User schema (embedded role/department)
-11. Database seeding script with bcrypt password hashing
-12. Service layer with transactions for data integrity
-13. MongoDB error handling in controllers
-14. Auth service with login and password change functionality
-15. Git repository initialized and committed
+1. ✅ Full frontend structure with Shadcn UI
+2. ✅ Full backend MVC structure with MongoDB integration
+3. ✅ **Real authentication system** with bcrypt password verification
+4. ✅ **Frontend-Backend API integration** - All pages fetch real data
+5. ✅ Users page with CRUD operations via backend API
+6. ✅ Settings page with logout
+7. ✅ User creation/editing modal with API integration
+8. ✅ Responsive design for all screen sizes
+9. ✅ Context API for auth (real) and theme
+10. ✅ MongoDB database with single User schema (embedded role/department)
+11. ✅ Database seeding script with bcrypt password hashing
+12. ✅ Service layer with embedded data support
+13. ✅ MongoDB error handling in controllers
+14. ✅ Auth routes: login, logout, change-password
+15. ✅ API service layer with typed responses
+16. ✅ Toast notification system for user feedback
+17. ✅ Loading states and error handling throughout
+18. ✅ Session persistence with localStorage
+19. ✅ CORS configured for frontend-backend communication
+20. ✅ Git repository initialized and committed
 
 ### **Git Status**
 - **Last commit:** `d184902` - "feat: initial commit - full-stack admin panel with RBAC"
-- **Pending commit:** MongoDB integration with single schema, bcrypt, seeding
+- **Pending commit:** Frontend-backend integration, real authentication, API layer, MongoDB seeding
 - **Branch:** master
 
 ---
@@ -243,17 +292,26 @@ const fields = [
 ## How to Run
 
 ```bash
-# Frontend
+# 1. Start MongoDB (ensure MongoDB is running on localhost:27017)
+mongod
+
+# 2. Seed the database (first time only)
+cd server
+npm install
+npm run seed
+
+# 3. Start Backend Server
+npm run dev
+# Runs on http://localhost:3000
+
+# 4. Start Frontend (in a new terminal)
 cd frontend
 npm install
 npm run dev
-# Runs on http://localhost:5173
+# Runs on http://localhost:5174
 
-# Backend
-cd server
-npm install
-npm run dev
-# Runs on http://localhost:3000
+# 5. Access Application
+# Open browser: http://localhost:5174
 
 # Login Credentials
 Email: superadmin@company.com
@@ -265,22 +323,28 @@ Password: password123
 ## What Needs to Be Done Next
 
 ### **Immediate Next Steps**
-1. **Connect Frontend to Backend API**
-   - Replace mock data in `Users.tsx` with API calls
-   - Use `useFetch` hook for API requests
-   - Update `AuthContext` to call real `/api/auth/login` endpoint
 
-2. **Database Integration**
-   - Choose database (MongoDB recommended for nested permissions)
-   - Replace in-memory `data.js` with actual database
-   - Implement Mongoose models
-   - Add database connection in `server/src/config/index.js`
+### **🔧 BACKEND ARCHITECTURE CHANGES (PENDING)**
+**Note:** The current backend implementation needs restructuring. Changes to be made:
+- (Details to be specified)
 
-3. **Authentication & Authorization**
-   - Implement JWT token generation on login
-   - Add token verification middleware
-   - Implement refresh token mechanism
-   - Add protected route middleware
+1. ~~**Connect Frontend to Backend API**~~ ✅ **COMPLETED**
+   - ✅ Replaced mock data with real API calls
+   - ✅ Created API service layer
+   - ✅ Updated `AuthContext` to call `/api/auth/login`
+
+2. ~~**Database Integration**~~ ✅ **COMPLETED**
+   - ✅ MongoDB integrated with embedded schema architecture
+   - ✅ Mongoose models implemented
+   - ✅ Database seeding with 10 users
+
+3. **Authentication & Authorization** (Partial - Login working, JWT pending)
+   - ✅ Login with bcrypt password verification
+   - ✅ Session persistence in localStorage
+   - ⏳ JWT token generation on login (pending)
+   - ⏳ Token verification middleware (pending)
+   - ⏳ Refresh token mechanism (pending)
+   - ⏳ Protected route middleware (pending)
 
 4. **Permission-Based UI Rendering**
    - Hide/show sidebar items based on user permissions
@@ -386,7 +450,7 @@ VITE_APP_NAME=Admin
 ```
 NODE_ENV=development
 PORT=3000
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://localhost:5173,http://localhost:5174
 
 # Database
 MONGODB_URI=mongodb://localhost:27017/admin_rbac
@@ -396,7 +460,12 @@ DB_CONNECTION_TIMEOUT=30000
 
 # Security
 BCRYPT_SALT_ROUNDS=12
-JWT_SECRET=your-secret-key
+JWT_SECRET=your-super-secret-jwt-key-change-in-production-min-32-chars
+JWT_EXPIRES_IN=24h
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
 ```
 
 ---
@@ -570,6 +639,99 @@ try {
 - **5 Roles:** Embedded in user documents
 - **Permissions:** Array of permission codes per user
 
+---
+
+## 🔐 User Login Credentials
+
+All users can login with **password:** `password123`
+
+### **Super Admin (Level 1)**
+1. **John Super Admin**
+   - Email: `superadmin@company.com`
+   - Password: `password123`
+   - Department: None
+   - Report Code: `SA7X9K2M`
+   - Status: Active
+   - Permissions: All (`*`)
+
+### **Admin (Level 2)**
+2. **Jane Admin**
+   - Email: `admin@company.com`
+   - Password: `password123`
+   - Department: None
+   - Report Code: `AD3K8L1P`
+   - Status: Active
+   - Reports to: John Super Admin
+
+### **Heads of Department (Level 3)**
+3. **Robert Engineering Head**
+   - Email: `hod.engineering@company.com`
+   - Password: `password123`
+   - Department: Engineering
+   - Report Code: `HE5R2N4K`
+   - Status: Active
+   - Reports to: Jane Admin
+
+4. **Lisa HR Head**
+   - Email: `hod.hr@company.com`
+   - Password: `password123`
+   - Department: Human Resources
+   - Report Code: `HH7K1M9N`
+   - Status: Active
+   - Reports to: Jane Admin
+
+5. **David Finance Head**
+   - Email: `hod.finance@company.com`
+   - Password: `password123`
+   - Department: Finance
+   - Report Code: `HF4X6T8Z`
+   - Status: **Inactive**
+   - Reports to: Jane Admin
+
+6. **Emma Marketing Head**
+   - Email: `hod.marketing@company.com`
+   - Password: `password123`
+   - Department: Marketing
+   - Report Code: `HM2Y5R7L`
+   - Status: Active
+   - Reports to: John Super Admin
+
+### **Managers (Level 4)**
+7. **Sarah Tech Manager**
+   - Email: `manager.tech@company.com`
+   - Password: `password123`
+   - Department: Engineering
+   - Report Code: `MT6P9L2W`
+   - Status: Active
+   - Reports to: Robert Engineering Head
+
+8. **Alex Campaign Manager**
+   - Email: `manager.campaign@company.com`
+   - Password: `password123`
+   - Department: Marketing
+   - Report Code: `MM1Z4S6B`
+   - Status: Active
+   - Reports to: Emma Marketing Head
+
+### **Employees (Level 5)**
+9. **Mike Developer**
+   - Email: `mike.dev@company.com`
+   - Password: `password123`
+   - Department: Engineering
+   - Report Code: `EM3D8V5Q`
+   - Status: Active
+   - Reports to: Sarah Tech Manager
+
+10. **Chris Content Writer**
+    - Email: `chris.content@company.com`
+    - Password: `password123`
+    - Department: Marketing
+    - Report Code: `EC9Q3W7H`
+    - Status: **Inactive**
+    - Reports to: Alex Campaign Manager
+
+---
+
 ### **API Error Handling**
 
 **MongoDB-Specific Errors:**
@@ -581,4 +743,28 @@ try {
 ---
 
 ## Summary
-We successfully built a complete full-stack admin panel with RBAC from scratch. The frontend is fully responsive with Shadcn UI, and the backend follows MVC with best practices. All core features are implemented, and the project is ready for database integration and production enhancements. The codebase follows strict TypeScript and architectural patterns to ensure maintainability and scalability.
+We successfully built a **complete, fully-integrated full-stack admin panel with RBAC**. The frontend is fully responsive with Shadcn UI and **connected to a real MongoDB backend** via RESTful API. The backend follows MVC architecture with embedded role/department data model. **All core features are implemented and working:**
+
+### **What's Working:**
+✅ Real authentication with bcrypt password hashing  
+✅ Frontend-backend API integration with typed service layer  
+✅ CRUD operations for users (Create, Read, Update, Delete)  
+✅ MongoDB database with single-schema embedded architecture  
+✅ Database seeding with 10 sample users across all roles  
+✅ Real-time user statistics on Dashboard  
+✅ Search and filtering on Users page  
+✅ Toast notifications for user feedback  
+✅ Loading states and error handling  
+✅ Session persistence and auto-restore  
+✅ Responsive design for all screen sizes  
+
+### **Production-Ready Features:**
+- Bcrypt password hashing (12 salt rounds)
+- CORS configuration
+- Rate limiting
+- Centralized error handling
+- Input validation
+- MongoDB connection pooling
+- Graceful shutdown handling
+
+The codebase follows strict TypeScript and architectural patterns to ensure maintainability and scalability. **The application is fully functional and ready for production deployment with additional JWT implementation and testing.**
